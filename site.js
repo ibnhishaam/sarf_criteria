@@ -1,4 +1,4 @@
-// made 20261126T032821
+// made 20261126T150145
 // The code of every page. Each part runs only on the pages that have it.
 // Saved in the browser (each with a version number, so a later layout can read older saves):
 //   sarf_levels   { v: 1, m: { ID: { l: 0 to 3, d: when last changed } } }   (old ticks in sarf_ticks become level 3, once)
@@ -75,14 +75,17 @@
 
   // ---------- settings: a panel that slides in over the right of the page
   var drawer = $('drawer'), navSet = document.querySelector('.nav-set');
+  var shutTimer = null;
   function setOpen(o) {
-    drawer.hidden = !o; navSet.setAttribute('aria-expanded', String(o)); b.classList.toggle('drawer-open', o);
-    if (o) drawer.querySelector('.dclose').focus(); else navSet.focus();
+    clearTimeout(shutTimer); navSet.setAttribute('aria-expanded', String(o)); b.classList.toggle('drawer-open', o);
+    if (o) { drawer.classList.remove('closing'); drawer.hidden = false; drawer.querySelector('.dclose').focus(); return; }
+    drawer.classList.add('closing'); navSet.focus();
+    shutTimer = setTimeout(function () { drawer.hidden = true; drawer.classList.remove('closing'); }, 200);
   }
   if (drawer && navSet) {
-    navSet.addEventListener('click', function () { setOpen(drawer.hidden); });
+    navSet.addEventListener('click', function () { setOpen(drawer.hidden || drawer.classList.contains('closing')); });
     drawer.querySelector('.dclose').addEventListener('click', function () { setOpen(false); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !drawer.hidden) setOpen(false); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !drawer.hidden && !drawer.classList.contains('closing')) setOpen(false); });
     if (location.hash === '#settings') setOpen(true);
   }
   on('.gear', 'click', function () { var p = $('setp'); p.hidden = !p.hidden; this.setAttribute('aria-expanded', String(!p.hidden)); });
@@ -146,28 +149,38 @@
     prio: { key: 'sarf_prio', start: 'squares', apply: function (v) { b.classList.toggle('prio-bar', v === 'bar'); } },
     pcol: { key: 'sarf_prio_colour', start: 'traffic', apply: function (v) { b.classList.toggle('prio-mono', v === 'mono'); } },
     level: { key: 'sarf_level_show', start: 'show', apply: function (v) { b.classList.toggle('no-level', v === 'hide'); } },
-    arfont: { key: 'sarf_ar_font', start: 'trad', apply: function (v) { font('ar', v); } },
+    arfont: { key: 'sarf_ar_font', start: 'amiri', apply: function (v) { font('ar', v); } },
     arsize: { key: 'sarf_ar_size', start: '1.2', apply: function (v) { document.documentElement.style.setProperty('--ar-scale', v === '1' ? '1' : '1.2'); } },
     enfont: { key: 'sarf_en_font', start: 'poppins', apply: function (v) { font('en', v); } }
   };
-  // fonts from Google Fonts are fetched only when a student chooses one
-  // each font: [the font on the student's own computer, or '' ; a free Google font, fetched only when chosen]
+  // fonts from Google Fonts are fetched only when a student chooses one, so they look the same on every device
+  // each font: [its Google name, or '' for the device's own; the styles to fetch: real italics where the font has them]
   var FONTS = {
-    ar: { plain: ['', ''], trad: ['Traditional Arabic', 'Amiri'], typeset: ['Arabic Typesetting', 'Amiri'], amiri: ['', 'Amiri'],
-          naskh: ['', 'Noto Naskh Arabic'], sch: ['', 'Scheherazade New'] },
-    en: { sans: ['', ''], gothic: ['Century Gothic', 'Didact Gothic'], poppins: ['', 'Poppins'], nunito: ['', 'Nunito'], lexend: ['', 'Lexend'] }
+    ar: { plain: ['', ''], amiri: ['Amiri', 'wght@400;700'], naskh: ['Noto Naskh Arabic', 'wght@400;600;700'],
+          sch: ['Scheherazade New', 'wght@400;600;700'] },
+    en: { sans: ['', ''], poppins: ['Poppins', 'ital,wght@0,400;0,600;0,700;1,400;1,600', 'Lexend'], nunito: ['Nunito', 'ital,wght@0,400;0,600;0,700;1,400;1,600'],
+          lexend: ['Lexend', 'wght@400;600;700'], didact: ['Didact Gothic', ''] }
   };
+  // a student who chose a font that has left the list gets the closest one
+  [['sarf_ar_font', { trad: 'amiri', typeset: 'amiri' }], ['sarf_en_font', { gothic: 'didact' }]].forEach(function (m) {
+    var v = load(m[0]); if (m[1][v]) save(m[0], m[1][v]);
+  });
   function font(kind, v) {
-    var f = FONTS[kind][v] || ['', ''], local = f[0], web = f[1];
+    var f = FONTS[kind][v] || ['', ''], web = f[0];
     if (web && !document.getElementById('font-' + web)) {
       var l = el('link'); l.id = 'font-' + web; l.rel = 'stylesheet';
-      l.href = 'https://fonts.googleapis.com/css2?family=' + web.replace(/ /g, '+') + ':wght@400;600;700&display=swap'; document.head.appendChild(l);
+      l.href = 'https://fonts.googleapis.com/css2?family=' + web.replace(/ /g, '+') + (f[1] ? ':' + f[1] : '') + '&display=swap'; document.head.appendChild(l);
     }
-    var names = [local, web].filter(Boolean).map(function (n) { return '"' + n + '", '; }).join('');
-    if (kind === 'ar') {
-      document.documentElement.style.setProperty('--ar-font', names);
-      document.documentElement.style.setProperty('--ar-fix', ({ typeset: '1.45', trad: '1.3' })[v] || '1');   // these two are drawn small
-    } else document.documentElement.style.setProperty('--en-font', names + '"Segoe UI", Arial, sans-serif');
+    // a font that lacks the dotted transliteration letters (Poppins) borrows only those letters from a font that has them:
+    // the browser fetches a tiny file holding just these letters, and draws every other letter in the chosen font
+    if (f[2] && !document.getElementById('font-' + f[2] + '-letters')) {
+      var k = el('link'); k.id = 'font-' + f[2] + '-letters'; k.rel = 'stylesheet';
+      k.href = 'https://fonts.googleapis.com/css2?family=' + f[2] + ':wght@400;600;700&text=' + encodeURIComponent('ṣḥṭḍẓṢḤṬḌẒʿʾ') + '&display=swap';
+      document.head.appendChild(k);
+    }
+    var names = (web ? '"' + web + '", ' : '') + (f[2] ? '"' + f[2] + '", ' : '');
+    if (kind === 'ar') document.documentElement.style.setProperty('--ar-font', names);
+    else document.documentElement.style.setProperty('--en-font', names + '"Segoe UI", Arial, sans-serif');
   }
   function current(name) { return load(SETTING[name].key) || SETTING[name].start; }
   Object.keys(SETTING).forEach(function (name) {
@@ -307,6 +320,22 @@
       });
       $('none').hidden = any;
     };
+    var fp = $('fpanel'), ft = $('ftoggle');
+    if (fp && ft) {
+      var home = 0, ticking = false;   // where the Show only rows sit in the page when not pinned
+      var check = function () {
+        ticking = false;
+        if (!b.classList.contains('fopen')) home = fp.getBoundingClientRect().top + window.scrollY;
+        var gone = window.scrollY + 48 > home + fp.offsetHeight;   // scrolled past them
+        if (!gone && b.classList.contains('fopen')) { b.classList.remove('fopen'); ft.setAttribute('aria-expanded', 'false'); ft.classList.remove('on'); }
+        ft.hidden = !gone;
+      };
+      window.addEventListener('scroll', function () { if (!ticking) { ticking = true; requestAnimationFrame(check); } }, { passive: true });
+      window.addEventListener('resize', check); check();
+      ft.addEventListener('click', function () {
+        var o = b.classList.toggle('fopen'); ft.setAttribute('aria-expanded', String(o)); ft.classList.toggle('on', o);
+      });
+    }
     var marked = function () {
       var m = levels().m, n = (DATA.lines || []).filter(function (x) { return m[x.id] && m[x.id].l; }).length;
       $('marked').textContent = n + ' of ' + DATA.lines.length + ' marked';
@@ -319,10 +348,20 @@
     setView(load('sarf_view') === 'topic' ? 'topic' : 'home');
   }
 
-  // ---------- glossary
+  // ---------- glossary and application: a click on a term or a name opens what is under it; a switch opens them all, remembered
+  on('.opener', 'click', function () {
+    var box = this.closest('.g, .acard'), o = box.classList.toggle('open'); this.setAttribute('aria-expanded', String(o));
+  });
+  [['gall', 'sarf_gl_all'], ['aall', 'sarf_app_all']].forEach(function (s) {
+    var sw = $(s[0]); if (!sw) return;
+    var setAll = function (o) { sw.checked = o; b.classList.toggle('all-open', o); };
+    setAll(load(s[1]) === '1');
+    sw.addEventListener('change', function () { save(s[1], sw.checked ? '1' : '0'); setAll(sw.checked); });
+  });
   if ($('gfind')) $('gfind').addEventListener('input', function () {
     var q = this.value.trim().toLowerCase(), n = 0;
     all('.g').forEach(function (g) { var ok = g.dataset.find.indexOf(q) >= 0; g.hidden = !ok; n += ok; });
+    all('.gh').forEach(function (h) { h.hidden = !document.querySelector('.g[data-g="' + h.dataset.g + '"]:not([hidden])'); });
     $('gnone').hidden = n > 0;
   });
 
