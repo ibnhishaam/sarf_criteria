@@ -1,9 +1,10 @@
-// made 20261126T150145
+// made 20261126T234550
 // The code of every page. Each part runs only on the pages that have it.
 // Saved in the browser (each with a version number, so a later layout can read older saves):
 //   sarf_levels   { v: 1, m: { ID: { l: 0 to 3, d: when last changed } } }   (old ticks in sarf_ticks become level 3, once)
 //   sarf_notebook { v: 1, notes: [ { id, title, text, links: [ { t: 'c' criterion, 't' topic, 's' section, r: its ID } ], made, changed } ] }
-//   settings: sarf_term_face, sarf_lines, sarf_prio, sarf_level_show, sarf_view, sarf_filters, sarf_nb_order
+//   settings: sarf_term_face, sarf_lines, sarf_prio, sarf_level_show, sarf_view, sarf_filters, sarf_nb_order,
+//             sarf_open (which criteria headings are open), sarf_crit_all, sarf_gl_all, sarf_app_all (the Show all switches)
 // Every change reads the latest save first and changes only its own part, so two open tabs never undo each other.
 (function () {
   'use strict';
@@ -72,6 +73,11 @@
     var t = e.target.closest ? e.target.closest('button.lv[data-id]') : null;
     if (t && !t.contains(e.relatedTarget)) delete t.dataset.h;
   });
+
+  // ---------- the bar of pages stays at the top; the bars that stick under it on the criteria page start below it
+  var nav = document.querySelector('.nav');
+  function navHeight() { if (nav) document.documentElement.style.setProperty('--nav-h', nav.offsetHeight + 'px'); }
+  navHeight(); window.addEventListener('resize', navHeight);
 
   // ---------- settings: a panel that slides in over the right of the page
   var drawer = $('drawer'), navSet = document.querySelector('.nav-set');
@@ -258,7 +264,7 @@
   }
   function fillTerm(g) {
     var x = parse(g.dataset.info, {}), st = levels().m[x.id];
-    item('ID', x.id); item('Transliteration', x.tr);
+    item('ID', x.id); item('For', x.y2 ? 'Year 2 only' : 'Year 1 and Year 2'); item('Transliteration', x.tr);
     if (x.en) item('English', x.en);
     if (x.pl) item('Plural', x.pl);
     item(NAME, LEVELS[st ? st.l : 0] + (st ? ', ' + ago(st.d) : ''));
@@ -279,7 +285,7 @@
   document.addEventListener('click', function (e) {
     var t = e.target.closest ? e.target.closest('.inf') : null;
     if (t) {
-      e.preventDefault(); e.stopPropagation();   // inside a progress heading, the i does not open the list
+      e.preventDefault(); e.stopPropagation();   // inside a heading, the i does not open the lines
       var was = !pop.hidden && popBtn === t; closePop(); if (was) return;
       popBtn = t; pop.hidden = false; refillPop(); t.setAttribute('aria-expanded', 'true');
       var r = t.getBoundingClientRect(), w = pop.offsetWidth;
@@ -291,33 +297,46 @@
   }, true);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePop(); });
 
-  // ---------- criteria page: views and filters
+  // ---------- the folds of the criteria and the glossary: a heading with a count and a bar, opened by a click, remembered
+  function meter(box, ids) {   // box: the heading that holds the count; ids: the lines or terms it counts
+    var m = levels().m, c = [0, 0, 0, 0], n = ids.length;
+    ids.forEach(function (i) { c[m[i] ? m[i].l : 0]++; });
+    var f = box.querySelector('.frac'), ib = box.querySelector('.inf'), bar = box.querySelector('.pr-b');
+    f.textContent = c[3] + ' / ' + n; ib.dataset.c = c.join(','); ib.dataset.n = n;
+    ib.setAttribute('aria-label', 'How these ' + n + ' are marked');
+    all('i', bar).forEach(function (s) { var l = +s.className.slice(1); s.style.width = (n ? 100 * c[l] / n : 0) + '%'; });
+  }
+  var opened = parse(load('sarf_open'), {}) || {};
+  all('.fold').forEach(function (f) {
+    var o = !!opened[f.dataset.k]; f.classList.toggle('open', o); f.querySelector('.opener').setAttribute('aria-expanded', String(o));
+    // a click anywhere on the heading opens it, except on the i
+    f.querySelector('.fhead').addEventListener('click', function (e) { if (!e.target.closest('.opener, .inf')) f.querySelector('.opener').click(); });
+  });
+  var y1 = function () { return b.classList.contains('lines-y1'); };
+
+  // ---------- criteria page: views, filters, and a count and bar on every heading
   if ($('view-home')) {
-    var setView = function (v) { $('view-home').hidden = v !== 'home'; $('view-topic').hidden = v !== 'topic'; choose(document.querySelector('.views'), v); filter(); marked(); };
+    var setView = function (v) { $('view-home').hidden = v !== 'home'; $('view-topic').hidden = v !== 'topic'; choose(document.querySelector('.views'), v); filter(); };
     all('.views button').forEach(function (x) { x.dataset.v = x.dataset.view; x.addEventListener('click', function () { save('sarf_view', x.dataset.v); setView(x.dataset.v); }); });
-    var pOK = picks('p', 'sarf_filter_p', function () { filter(); });
-    var lOK = picks('l', 'sarf_filter_l', function () { filter(); });
+    var pOK = picks('p', 'sarf_filter_p', function () { refresh(); });
+    var lOK = picks('l', 'sarf_filter_l', function () { refresh(); });
+    // a line is counted when its priority is chosen in Show only and it is for this year; how it is marked does not matter
+    var counts = function (r) { return pOK(r.dataset.p === '4' ? 3 : +r.dataset.p) && !(y1() && r.classList.contains('y2row')); };
+    var ids = function (box) { return all('.row', box).filter(counts).map(function (r) { return r.dataset.id; }); };
     var filter = function () {
-      var m = levels().m, y1 = b.classList.contains('lines-y1'), any = false;
+      var m = levels().m, any = false;
       ['view-home', 'view-topic'].forEach(function (v) {
         var box = $(v);
         all('.row', box).forEach(function (r) {
           var l = m[r.dataset.id] ? m[r.dataset.id].l : 0;
-          var ok = pOK(r.dataset.p === '4' ? 3 : +r.dataset.p) && lOK(l) && !(y1 && r.classList.contains('y2row'));
+          var ok = pOK(r.dataset.p === '4' ? 3 : +r.dataset.p) && lOK(l) && !(y1() && r.classList.contains('y2row'));
           r.classList.toggle('off', !ok); if (ok && !box.hidden) any = true;
         });
-        // a heading shows only if a line under it shows (a main heading looks down to the next main heading)
-        var heads = all('.hd', box);
-        heads.forEach(function (h, i) {
-          var shows = false, n = h.nextElementSibling;
-          while (n && !(n.classList.contains('hd') && (n.tagName === 'H2' || n.tagName === h.tagName))) {
-            if (n.classList.contains('plain') && n.querySelector('.row:not(.off)')) shows = true;
-            n = n.nextElementSibling;
-          }
-          h.classList.toggle('off', !shows);
-          var p = h.nextElementSibling; if (p && p.classList.contains('sub')) p.classList.toggle('off', !shows);
-        });
+        // a heading shows only if a line under it shows
+        all('.fold', box).forEach(function (h) { h.classList.toggle('off', !h.querySelector('.row:not(.off)')); });
+        all('.fold', box).forEach(function (f) { meter(f.querySelector('.fhead'), ids(f)); });
       });
+      meter(document.querySelector('.ovr[data-k="all"] .fhead'), ids($('view-home')));
       $('none').hidden = any;
     };
     var fp = $('fpanel'), ft = $('ftoggle');
@@ -325,8 +344,9 @@
       var home = 0, ticking = false;   // where the Show only rows sit in the page when not pinned
       var check = function () {
         ticking = false;
+        var top = (nav ? nav.offsetHeight : 0) + 48;
         if (!b.classList.contains('fopen')) home = fp.getBoundingClientRect().top + window.scrollY;
-        var gone = window.scrollY + 48 > home + fp.offsetHeight;   // scrolled past them
+        var gone = window.scrollY + top > home + fp.offsetHeight;   // scrolled past them
         if (!gone && b.classList.contains('fopen')) { b.classList.remove('fopen'); ft.setAttribute('aria-expanded', 'false'); ft.classList.remove('on'); }
         ft.hidden = !gone;
       };
@@ -336,82 +356,53 @@
         var o = b.classList.toggle('fopen'); ft.setAttribute('aria-expanded', String(o)); ft.classList.toggle('on', o);
       });
     }
-    var marked = function () {
-      var m = levels().m, n = (DATA.lines || []).filter(function (x) { return m[x.id] && m[x.id].l; }).length;
-      $('marked').textContent = n + ' of ' + DATA.lines.length + ' marked';
-    };
+    // the key: a small panel under its button, out of the way until it is wanted
+    var kb = $('keybtn'), kp = $('keyp');
+    if (kb && kp) {
+      var keyOpen = function (o) { kp.hidden = !o; kb.setAttribute('aria-expanded', String(o)); kb.classList.toggle('on', o); };
+      kb.addEventListener('click', function () { keyOpen(kp.hidden); });
+      document.addEventListener('click', function (e) { if (!kp.hidden && !kp.contains(e.target) && !kb.contains(e.target)) keyOpen(false); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !kp.hidden) { keyOpen(false); kb.focus(); } });
+    }
     on('#show-all', 'click', function () {
       ['sarf_filter_p', 'sarf_filter_l'].forEach(function (k) { save(k, JSON.stringify(['3', '2', '1', '0'])); });
       location.reload();
     });
-    refresh = function () { filter(); refillPop(); marked(); };
+    refresh = function () { filter(); refillPop(); };
     setView(load('sarf_view') === 'topic' ? 'topic' : 'home');
   }
 
-  // ---------- glossary and application: a click on a term or a name opens what is under it; a switch opens them all, remembered
+  // ---------- glossary, application and criteria: a click on a term, a name or a heading opens what is under it;
+  // a switch opens them all, remembered
   on('.opener', 'click', function () {
-    var box = this.closest('.g, .acard'), o = box.classList.toggle('open'); this.setAttribute('aria-expanded', String(o));
+    var box = this.closest('.g, .acard, .fold'), o = box.classList.toggle('open'); this.setAttribute('aria-expanded', String(o));
+    if (box.classList.contains('fold')) { var k = parse(load('sarf_open'), {}) || {}; if (o) k[box.dataset.k] = 1; else delete k[box.dataset.k]; save('sarf_open', JSON.stringify(k)); }
   });
-  [['gall', 'sarf_gl_all'], ['aall', 'sarf_app_all']].forEach(function (s) {
-    var sw = $(s[0]); if (!sw) return;
-    var setAll = function (o) { sw.checked = o; b.classList.toggle('all-open', o); };
-    setAll(load(s[1]) === '1');
-    sw.addEventListener('change', function () { save(s[1], sw.checked ? '1' : '0'); setAll(sw.checked); });
-  });
-  if ($('gfind')) $('gfind').addEventListener('input', function () {
-    var q = this.value.trim().toLowerCase(), n = 0;
-    all('.g').forEach(function (g) { var ok = g.dataset.find.indexOf(q) >= 0; g.hidden = !ok; n += ok; });
-    all('.gh').forEach(function (h) { h.hidden = !document.querySelector('.g[data-g="' + h.dataset.g + '"]:not([hidden])'); });
-    $('gnone').hidden = n > 0;
-  });
-
-  // ---------- progress
-  if ($('prog')) {
-    var ppOK = picks('pp', 'sarf_prog_p', function () { refresh(); });
-    var counted = function (x) { return !(b.classList.contains('lines-y1') && x.y2) && ppOK(x.p === 4 ? 3 : x.p); };
-    var groups = function () {
-      var L = DATA.lines;
-      return [{ title: '', rows: [{ key: 'all', name: 'All criteria', ids: L.filter(counted).map(function (x) { return x.id; }) },
-                                  { key: 'gl', name: 'Glossary', ids: DATA.glossary.map(function (g) { return g.id; }), gl: true }] },
-        { title: 'By topic', rows: DATA.topics.map(function (t) { return { key: 't' + t.id, name: t.name, ids: L.filter(function (x) { return x.t.indexOf(t.id) >= 0 && counted(x); }).map(function (x) { return x.id; }) }; }) },
-        { title: 'By section', rows: DATA.sections.map(function (s) { return { key: 's' + s.code, name: s.num + ' ' + s.name, ids: L.filter(function (x) { return x.s === s.code && counted(x); }).map(function (x) { return x.id; }) }; }) }];
+  // the glossary's definitions have their own button, apart from its folds
+  var OPENS = { sarf_crit_all: 'all-open', sarf_gl_folds: 'all-open', sarf_gl_all: 'defs-open', sarf_app_all: 'all-open' };
+  all('.openall').forEach(function (bt) {
+    var k = bt.dataset.key, set = function (o) {
+      b.classList.toggle(OPENS[k], o); bt.textContent = o ? bt.dataset.off : bt.dataset.on;
+      bt.setAttribute('aria-pressed', String(o)); bt.classList.toggle('on', o);
     };
-    var opened = {};
+    set(load(k) === '1');
+    bt.addEventListener('click', function () { var o = !b.classList.contains(OPENS[k]); save(k, o ? '1' : '0'); set(o); });
+  });
+  if ($('gfind')) {
+    $('gfind').addEventListener('input', function () {
+      var q = this.value.trim().toLowerCase(), n = 0;
+      all('.g').forEach(function (g) { var ok = g.dataset.find.indexOf(q) >= 0; g.hidden = !ok; n += ok; });
+      all('.gfold').forEach(function (f) { f.hidden = !f.querySelector('.g:not([hidden])'); });
+      b.classList.toggle('searching', !!q);   // while searching, every tag with a match is open
+      $('gnone').hidden = n > 0;
+    });
+    var gid = function (g) { return g.querySelector('.lv').dataset.id; };
+    var counted = function (g) { return !(y1() && g.classList.contains('y2row')); };
     refresh = function () {
-      closePop(); var box = $('prog'), m = levels().m, G = {}; DATA.glossary.forEach(function (g) { G[g.id] = g; });
-      all('details[data-k]', box).forEach(function (d) { opened[d.dataset.k] = d.open; });
-      box.textContent = '';
-      groups().forEach(function (part) {
-        if (part.title) box.appendChild(el('h2', '', part.title));
-        part.rows.forEach(function (r) {
-          if (!r.ids.length) return;
-          var c = [0, 0, 0, 0]; r.ids.forEach(function (i) { c[m[i] ? m[i].l : 0]++; });
-          var d = el('details', 'pr'); d.dataset.k = r.key; d.open = !!opened[r.key];
-          var sm = el('summary'), t = el('div', 'pr-t'), nm = el('span'); nm.innerHTML = r.name; t.appendChild(nm);
-          var cnt = el('span', 'cnts'); cnt.appendChild(el('span', 'frac', c[3] + ' / ' + r.ids.length));   // the lines known, out of all
-          var ib = el('button', 'inf', 'i'); ib.type = 'button'; ib.dataset.c = c.join(','); ib.dataset.n = r.ids.length;
-          ib.setAttribute('aria-label', 'How the ' + r.ids.length + ' lines are marked'); ib.setAttribute('aria-expanded', 'false');
-          cnt.appendChild(ib); t.appendChild(cnt);
-          var bar = el('div', 'pr-b'); [3, 2, 1].forEach(function (l) { var s = el('i', 'k' + l); s.style.width = (100 * c[l] / r.ids.length) + '%'; bar.appendChild(s); });
-          sm.appendChild(t); sm.appendChild(bar); d.appendChild(sm);
-          var list = el('div', 'pr-l');
-          d.addEventListener('toggle', function () {
-            if (!d.open || list.childNodes.length) return;
-            r.ids.forEach(function (i) {
-              var row = el('div', 'pr-r'), lvb = el('button', 'lv'); lvb.type = 'button'; lvb.dataset.id = i; lvb.innerHTML = BAR;
-              row.appendChild(lvb);
-              var w = el('span');
-              w.innerHTML = r.gl ? G[i].name : '<span class="num">' + LINE[i].num + '</span>' + LINE[i].html;
-              row.appendChild(w);
-              var st = m[i]; row.appendChild(el('span', 'sub', st ? ago(st.d) : ''));
-              var pm = el('span', 'c-pr'); if (!r.gl) pm.innerHTML = LINE[i].pm; row.appendChild(pm); list.appendChild(row);
-            });
-            paint();
-          });
-          d.appendChild(list); box.appendChild(d);
-          if (d.open) d.dispatchEvent(new Event('toggle'));
-        });
-      });
+      all('.gfold').forEach(function (f) { meter(f.querySelector('.fhead'), all('.g', f).filter(counted).map(gid)); });
+      var seen = {}; all('.g').filter(counted).forEach(function (g) { seen[gid(g)] = 1; });
+      meter(document.querySelector('.ovr[data-k="gl"] .fhead'), Object.keys(seen));
+      refillPop();
     };
     refresh();
   }
