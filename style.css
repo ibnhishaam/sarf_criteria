@@ -1,8 +1,9 @@
-/* made 20261127T000713 */
+/* made 20261127T003450 */
 /* The look of every page. Change a colour here and all pages follow. Made for a computer or a tablet first. */
 :root { --en-font:"Poppins", "Lexend", "Segoe UI", Arial, sans-serif; --ar-font:"Amiri",; --ar-scale:1.2; --ar-fix:1;
   --ease-out:cubic-bezier(0.23, 1, 0.32, 1); --ease-drawer:cubic-bezier(0.32, 0.72, 0, 1);
   --lv-w:48px; --lv-h:16px; --lv-line:#8795a4; --lv-third:#c3ccd6; --ink:#1d2530; --muted:#5b6673; --line:#d0d7e0; --strong:#9aa6b2; --head:#24466b; --band:#eef3f8; --know:#24466b; }
+html { scrollbar-gutter:stable; }   /* room for the scroll bar is kept on every page, so nothing shifts when it appears */
 * { box-sizing:border-box; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 [hidden], .off { display:none !important; }
 body { font-family:var(--en-font); color:var(--ink); background:#fff; max-width:900px; margin:0 auto; padding:0 16px 40px; line-height:1.5; font-size:16px; }
@@ -80,6 +81,8 @@ body.lines-y2 .acard .y2 { display:none; }
 .lv[data-l="1"] i { clip-path:inset(0 66.6% 0 0 round calc(var(--lv-h) / 2)); } .lv[data-l="2"] i { clip-path:inset(0 33.3% 0 0 round calc(var(--lv-h) / 2)); }
 .lv[data-l="3"] i { clip-path:inset(0 0 0 0 round calc(var(--lv-h) / 2)); }
 button.lv { height:28px; margin:-2px 12px -2px 0; cursor:pointer; align-self:flex-start; }
+/* on a touch screen the bar looks the same, but the area you can tap is taller; the row keeps its height */
+@media (pointer:coarse) { button.lv { height:44px; margin:-10px 12px -10px 0; } }
 button.lv::after { content:""; width:33.34%; background:rgba(36,70,107,.18); z-index:2; display:none; }
 button.lv[data-h]::after { display:block; } button.lv[data-h="2"]::after { left:33.33%; } button.lv[data-h="3"]::after { left:66.66%; }
 button.lv:focus-visible { outline:none; } button.lv:focus-visible::before { box-shadow:inset 0 0 0 1.5px var(--lv-line), 0 0 0 2px var(--head); }
@@ -196,7 +199,7 @@ body.defs-open .g .opener .chev, body.all-open .acard .opener .chev { visibility
 .fbody { display:none; padding:6px 0 0 24px; }
 .fold.open > .fbody, body.all-open .fbody { display:block; }
 /* a sub-home folds inside its section, a little smaller */
-.fold.sub { padding:6px 0; } .fold.sub:last-child { border-bottom:none; }
+.fold.sub { padding:6px 0; } .fold.sub > .fbody { padding-left:0; }   /* one indent only: a sub-section's lines line up with its own arrow */ .fold.sub:last-child { border-bottom:none; }
 .fold.sub > .fhead .opener { font-size:15px; } .fold.sub > .fhead .pr-b { height:6px; } .fold.sub > .fhead .pr-b i { height:6px; }
 body.all-open .fold > .fhead .opener .chev, body.searching .gfold > .fhead .opener .chev { transform:none; }
 body.searching .gfold .fbody { display:block; }
@@ -234,7 +237,7 @@ body.no-level .row.app .lv { display:none; }
 .page-about ul { margin:2px 0 6px; padding-left:20px; } .page-about .box { margin-top:4px; } li.sub { margin-left:22px; list-style:circle; color:inherit; }
 
 /* Notebook */
-body.page-notebook { max-width:1080px; }
+
 .nb-bar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 4px; } .gap { flex:1; }
 .nbk { display:grid; grid-template-columns:250px minmax(0, 1fr); gap:20px; margin-top:8px; } #nb-new { width:100%; margin-bottom:6px; }
 .nb-it, .nb-hit { display:block; width:100%; text-align:left; border:none; border-bottom:1px solid var(--line); border-radius:0; padding:8px; }
